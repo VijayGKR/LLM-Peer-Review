@@ -232,8 +232,17 @@ export default function EssayReviewForm() {
                   markupBuffer = '<';
                   buffer = buffer.slice(openingIndex);
                 } else {
-                  editsToAdd.push(buffer)
-                  buffer = '';
+                  //this is only temporary, need to find a more robust fix
+                  //this is susceptible to breaking if a chunk comes in with "\n and no }
+                  //it will display the "\n
+                  const endingIndex = buffer.indexOf('}')
+                  if(endingIndex !== -1){
+                    editsToAdd.push(buffer.slice(0, endingIndex - 2));
+                    buffer = '';
+                  }else{
+                    editsToAdd.push(buffer)
+                    buffer = '';
+                  }
                 }
               }
             }
