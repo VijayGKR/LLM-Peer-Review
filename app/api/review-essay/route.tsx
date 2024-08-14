@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
         for await (const chunk of stream) {
           console.log(chunk);
           if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-            console.log('Sending chunk:', chunk.delta.text);
+            //console.log('Sending chunk:', chunk.delta.text);
             controller.enqueue(encoder.encode(chunk.delta.text));
           }
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState , useRef} from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -10,6 +10,15 @@ export default function EssayReviewForm() {
   const [reviewedEssay, setReviewedEssay] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reviewedEssayParts, setReviewedEssayParts] = useState<(string | Edit)[]>([]);
+  const [pendingParts, setPendingParts] = useState<(string | Promise<Edit | null>)[]>([]);
+
+  interface Edit {
+    type: 'REPLACE' | 'INSERT' | 'COMMENT';
+    oldText?: string;
+    newText?: string;
+    reason: string;
+  }
 
   const handleEssayChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setUserEssay(event.target.value);
@@ -19,9 +28,120 @@ export default function EssayReviewForm() {
     setPrompt(event.target.value);
   };
 
+
+  function preprocessInput(input: string): string {
+    return input.replace(/\\"/g, '"');
+  }
+
+  async function parseMarkup(input: string): Promise<Edit | null> {
+    const processedInput = preprocessInput(input);
+
+    const commentMatch = processedInput.match(/<COMMENT reason="(.+?)"\/>/);
+    const replaceMatch = processedInput.match(/<REPLACE new="(.+?)" reason="(.+?)">(.*?)<\/REPLACE>/);
+    const insertMatch = processedInput.match(/<INSERT text="(.+?)" reason="(.+?)"\/>/);
+
+    if (commentMatch) {
+        return {
+            type: 'COMMENT',
+            reason: commentMatch[1]
+        };
+    } else if (replaceMatch) {
+        return {
+            type: 'REPLACE',
+            oldText: replaceMatch[3],
+            newText: replaceMatch[1],
+            reason: replaceMatch[2]
+        };
+    } else if (insertMatch) {
+        return {
+            type: 'INSERT',
+            newText: insertMatch[1],
+            reason: insertMatch[2]
+        };
+    } else {
+        return null;
+    }
+  }
+
+  interface InlineEditableProps {
+    edit: Edit;
+  }
+  
+  const InlineEditable: React.FC<InlineEditableProps> = ({ edit }) => {
+    const [isAccepted, setIsAccepted] = useState(false);
+    const [isRejected, setIsRejected] = useState(false);
+  
+    const handleAccept = () => {
+      setIsAccepted(true);
+      setIsRejected(false);
+    };
+  
+    const handleReject = () => {
+      setIsAccepted(false);
+      setIsRejected(true);
+    };
+  
+    if (isRejected) {
+      return null;
+    }
+  
+    let bgColor = '';
+    let displayText = '';
+    let textToShow = '';
+  
+    switch (edit.type) {
+      case 'REPLACE':
+        bgColor = 'bg-yellow-200';
+        displayText = edit.oldText || '';
+        textToShow = isAccepted ? (edit.newText || '') : displayText;
+        break;
+      case 'INSERT':
+        bgColor = 'bg-green-200';
+        displayText = '+';
+        textToShow = isAccepted ? (edit.newText || '') : displayText;
+        break;
+      case 'COMMENT':
+        bgColor = 'bg-blue-200';
+        displayText = '💬';
+        textToShow = displayText;
+        break;
+    }
+  
+    return (
+      <span className="relative group inline-block">
+        <span className={`cursor-pointer ${bgColor}`}>
+          {textToShow}
+        </span>
+        {!isAccepted && (
+          <span className="absolute bottom-full left-0 bg-white border border-gray-300 p-4 rounded shadow-lg hidden group-hover:block w-96 z-10">
+            <p className="font-semibold mb-2">{edit.type}</p>
+            {edit.newText && <p className="text-green-600 mb-2">{edit.newText}</p>}
+            <p className="text-sm text-gray-600 mb-4">{edit.reason}</p>
+            <div className="flex justify-between">
+              <button
+                onClick={handleAccept}
+                className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
+              >
+                {edit.type === 'COMMENT' ? 'Got it' : 'Accept'}
+              </button>
+              {edit.type !== 'COMMENT' && (
+                <button
+                  onClick={handleReject}
+                  className="text-red-500 border-red-500 border hover:bg-red-50 px-3 py-1 rounded"
+                >
+                  Reject
+                </button>
+              )}
+            </div>
+          </span>
+        )}
+      </span>
+    );
+  };
+
   const handleSubmit = async () => {
     setIsLoading(true);
-    setReviewedEssay('');
+    setReviewedEssayParts([]);
     setError(null);
     try {
       const response = await fetch('/api/review-essay', {
@@ -61,6 +181,7 @@ export default function EssayReviewForm() {
       
           if (startedStreaming) {
             let textToAdd = '';
+            let editToAdd: Edit | null = null;
             while (buffer.length > 0) {
               if (markupBuffer) {
                 const replaceIndex = buffer.indexOf('<R');
@@ -70,17 +191,15 @@ export default function EssayReviewForm() {
                 }
 
                 if(replaceCase){
-                  const closingReplaceIndex = buffer.indexOf('</REPLACE>');
-                  //this is now a replacement case
+                  const closingReplaceIndex = markupBuffer.indexOf('</REPLACE>');
                   if(closingReplaceIndex !== -1){
-                    markupBuffer += buffer.slice(0, closingReplaceIndex + 10);
-                    textToAdd += markupBuffer.slice(1)
-                    console.log("replace case textToAdd: ", textToAdd);
-                    buffer = buffer.slice(closingReplaceIndex + 10);
+                    editToAdd = await parseMarkup(markupBuffer.slice(1,closingReplaceIndex + 10));    
+                    console.log("editToAddReplace: ", editToAdd);
+                    buffer = markupBuffer.slice(closingReplaceIndex + 10) + buffer;
                     markupBuffer = '';
                     replaceCase = false;
                   }else{
-                    //I want to keep building up the buffer
+                    //console.log("in replace case ", markupBuffer);
                     markupBuffer += buffer;
                     buffer = '';
                   }
@@ -88,8 +207,8 @@ export default function EssayReviewForm() {
                   const closingIndex = buffer.indexOf('>');
                   if (closingIndex !== -1) {
                     markupBuffer += buffer.slice(0, closingIndex + 1);
-                    textToAdd += markupBuffer.slice(1);
-                    console.log("non replace case textToAdd: ", textToAdd);
+                    editToAdd = await parseMarkup(markupBuffer.slice(1));
+                    console.log("editToAdd: ", editToAdd);
                     buffer = buffer.slice(closingIndex + 1);
                     markupBuffer = '';
                   } else {
@@ -100,6 +219,7 @@ export default function EssayReviewForm() {
               } else {
                 const openingIndex = buffer.indexOf('<');
                 if (openingIndex !== -1) {
+                  //console.log("starting buffer: ", buffer);
                   textToAdd += buffer.slice(0, openingIndex);
                   markupBuffer = '<';
                   buffer = buffer.slice(openingIndex);
@@ -109,16 +229,20 @@ export default function EssayReviewForm() {
                 }
               }
             }
+
+            //console.log("textToAdd: ", textToAdd);
+            //console.log("editToAdd: ", editToAdd);
       
-            if (textToAdd) {
-              setReviewedEssay(prev => prev + textToAdd);
+            if (textToAdd || editToAdd) {
+              setReviewedEssayParts(prev => {
+                const newParts = [...prev];
+                if (textToAdd) newParts.push(textToAdd);
+                if (editToAdd) newParts.push(editToAdd);
+                return newParts;
+              });
             }
+
           }
-        }
-      
-        // Handle any remaining markupBuffer content
-        if (markupBuffer) {
-          setReviewedEssay(prev => prev + markupBuffer);
         }
       } else {
         throw new Error('Response body is not readable');
@@ -127,8 +251,19 @@ export default function EssayReviewForm() {
       console.error('Error reviewing essay:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred');
     } finally {
+      console.log("done");
       setIsLoading(false);
     }
+  };
+
+  const renderReviewedEssay = () => {
+    return reviewedEssayParts.map((part, index) => {
+      if (typeof part === 'string') {
+        return part;
+      } else {
+        return <InlineEditable key={index} edit={part} />;
+      }
+    });
   };
 
   return (
@@ -139,18 +274,20 @@ export default function EssayReviewForm() {
         placeholder="Enter your prompt here..."
         className="w-full h-20 p-2 border rounded"
       />
-      {reviewedEssay ? (
+      {reviewedEssayParts.length > 0 ? (
         <div className="p-4 border rounded-lg bg-white shadow">
-          <pre className="whitespace-pre-wrap">{reviewedEssay}</pre>
+          {renderReviewedEssay()}
         </div>
-      ) : (<div className="p-4 border rounded-lg bg-white shadow">
-        <Textarea
-          value={userEssay}
-          onChange={handleEssayChange}
-          placeholder="Enter your essay here..."
-          className="w-full h-40 p-2 border rounded"
-        />
-      </div>)}
+      ) : (
+        <div className="p-4 border rounded-lg bg-white shadow">
+          <Textarea
+            value={userEssay}
+            onChange={handleEssayChange}
+            placeholder="Enter your essay here..."
+            className="w-full h-40 p-2 border rounded"
+          />
+        </div>
+      )}
       <Button onClick={handleSubmit} disabled={isLoading}>
         {isLoading ? 'Reviewing...' : 'Review Essay'}
       </Button>
