@@ -167,7 +167,7 @@ export default function EssayReviewForm() {
       
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          
           
           buffer += decoder.decode(value);
           
@@ -180,8 +180,7 @@ export default function EssayReviewForm() {
           }
       
           if (startedStreaming) {
-            let textToAdd = '';
-            let editToAdd: Edit | null = null;
+            let editsToAdd: (string | Edit)[] = [];
             while (buffer.length > 0) {
               if (markupBuffer) {
                 const replaceIndex = buffer.indexOf('<R');
@@ -193,8 +192,10 @@ export default function EssayReviewForm() {
                 if(replaceCase){
                   const closingReplaceIndex = markupBuffer.indexOf('</REPLACE>');
                   if(closingReplaceIndex !== -1){
-                    editToAdd = await parseMarkup(markupBuffer.slice(1,closingReplaceIndex + 10));    
-                    console.log("editToAddReplace: ", editToAdd);
+                    const parsedEdit = await parseMarkup(markupBuffer.slice(1, closingReplaceIndex + 10));
+                    if (parsedEdit) {
+                      editsToAdd.push(parsedEdit);
+                    }
                     buffer = markupBuffer.slice(closingReplaceIndex + 10) + buffer;
                     markupBuffer = '';
                     replaceCase = false;
@@ -207,8 +208,11 @@ export default function EssayReviewForm() {
                   const closingIndex = buffer.indexOf('>');
                   if (closingIndex !== -1) {
                     markupBuffer += buffer.slice(0, closingIndex + 1);
-                    editToAdd = await parseMarkup(markupBuffer.slice(1));
-                    console.log("editToAdd: ", editToAdd);
+                    const parsedEdit = await parseMarkup(markupBuffer.slice(1));
+                    if (parsedEdit) {
+                      editsToAdd.push(parsedEdit);
+                    }
+                    console.log("editToAdd: ", parsedEdit);
                     buffer = buffer.slice(closingIndex + 1);
                     markupBuffer = '';
                   } else {
@@ -220,29 +224,30 @@ export default function EssayReviewForm() {
                 const openingIndex = buffer.indexOf('<');
                 if (openingIndex !== -1) {
                   //console.log("starting buffer: ", buffer);
-                  textToAdd += buffer.slice(0, openingIndex);
+                  editsToAdd.push(buffer.slice(0, openingIndex));
                   markupBuffer = '<';
                   buffer = buffer.slice(openingIndex);
                 } else {
-                  textToAdd += buffer;
+                  editsToAdd.push(buffer)
                   buffer = '';
                 }
               }
             }
 
-            //console.log("textToAdd: ", textToAdd);
-            //console.log("editToAdd: ", editToAdd);
+            console.log("editsToAdd: ", editsToAdd);
       
-            if (textToAdd || editToAdd) {
+            if (editsToAdd.length > 0) {
               setReviewedEssayParts(prev => {
                 const newParts = [...prev];
-                if (textToAdd) newParts.push(textToAdd);
-                if (editToAdd) newParts.push(editToAdd);
+                editsToAdd.forEach(edit => newParts.push(edit));
                 return newParts;
               });
             }
 
           }
+
+          if (done) break;
+          
         }
       } else {
         throw new Error('Response body is not readable');
