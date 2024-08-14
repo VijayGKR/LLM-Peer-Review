@@ -82,7 +82,11 @@ export default function EssayReviewForm() {
     };
   
     if (isRejected) {
-      return null;
+      if(edit.type === 'REPLACE'){
+        return edit.oldText;
+      }else{
+        return null;
+      }
     }
   
     let bgColor = '';
@@ -93,7 +97,7 @@ export default function EssayReviewForm() {
       case 'REPLACE':
         bgColor = 'bg-yellow-200';
         displayText = edit.oldText || '';
-        textToShow = isAccepted ? (edit.newText || '') : displayText;
+        textToShow = isAccepted ? (edit.newText || ''): displayText;
         break;
       case 'INSERT':
         bgColor = 'bg-green-200';
@@ -108,7 +112,7 @@ export default function EssayReviewForm() {
     }
   
     return (
-      <span className="relative group inline-block">
+      <span className="relative group">
         <span className={`cursor-pointer ${bgColor}`}>
           {textToShow}
         </span>
@@ -247,7 +251,7 @@ export default function EssayReviewForm() {
           }
 
           if (done) break;
-          
+
         }
       } else {
         throw new Error('Response body is not readable');
@@ -264,7 +268,12 @@ export default function EssayReviewForm() {
   const renderReviewedEssay = () => {
     return reviewedEssayParts.map((part, index) => {
       if (typeof part === 'string') {
-        return part;
+        return part.split('\n').map((line, i) => (
+          <React.Fragment key={`${index}-${i}`}>
+            {line}
+            {i < part.split('\n').length - 1 && <br />}
+          </React.Fragment>
+        ));
       } else {
         return <InlineEditable key={index} edit={part} />;
       }
