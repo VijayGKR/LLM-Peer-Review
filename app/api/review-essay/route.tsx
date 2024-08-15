@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(request: NextRequest) {
-  const apiKey = request.headers.get('X-API-Key');
+  const apiKey = "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";//request.headers.get('X-API-Key');
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'API key is required' }), {
       status: 400,

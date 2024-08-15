@@ -330,11 +330,28 @@ export default function EssayReviewForm() {
           )}
         </div>
         <div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">How to use</h3>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
+            <li>Enter a valid Anthropic API key.</li>
+            <li>Input a prompt detailing:
+              <ul className="list-disc list-inside ml-4 mt-1">
+                <li>The purpose of the text</li>
+                <li>Any relevant information</li>
+                <li>Modifications you want to see</li>
+              </ul>
+            </li>
+            <li>Input your writing in the text box below.</li>
+            <li>Click &quot;Review Text&quot; when you are satisfied.</li>
+            <li>A review of your text with inline markups will be generated.</li>
+            <li>Accept or reject changes by hovering over the marked-up text.</li>
+          </ol>
+        </div>
+        <div>
           <h3 className="text-lg font-medium text-gray-900">Annotation Legend</h3>
           <ul className="mt-2 space-y-1">
-            <li><span className="font-bold text-blue-600">Bold Blue</span>: Key points</li>
-            <li><span className="italic text-green-600">Italic Green</span>: Supporting evidence</li>
-            <li><span className="underline text-red-600">Underlined Red</span>: Areas for improvement</li>
+            <li><span className="bg-yellow-200">Highlighted text</span> - Suggested replacement</li>
+            <li><span className="bg-green-200">+</span> - Suggested insertion</li>
+            <li><span className="bg-blue-200">💬</span> - Comments</li>
           </ul>
         </div>
       </div>
@@ -342,7 +359,7 @@ export default function EssayReviewForm() {
   );
 
   return (
-    <div className="flex mx-4 sm:mx-6 md:mx-8 lg:mx-12">
+    <div className="flex mr-[-100px]ZZmx-4 sm:mx-6 md:mx-8 lg:mx-12">
       <Sidebar apiKey={apiKey} setApiKey={setApiKey} apiKeyError={apiKeyError} />
       <div className="flex-grow max-w-3xl ml-4">
         <div className="mb-4">
@@ -350,8 +367,13 @@ export default function EssayReviewForm() {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Enter your prompt here... default is general improvements"
-            className="w-full p-2 border rounded-lg"
+            className="w-full p-2 border rounded-lg resize-none overflow-hidden"
             rows={3}
+            style={{ minHeight: '3em' }}
+            onInput={(e) => {
+              e.currentTarget.style.height = 'auto';
+              e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+            }}
           />
         </div>
         <div className={`relative ${isLoading ? 'rgb-border' : ''}`}>
@@ -404,14 +426,14 @@ export default function EssayReviewForm() {
                 }}
               />
               <div className="absolute top-4 left-4 text-gray-400 pointer-events-none">
-                Enter your essay here...
+                Enter your text here...
               </div>
             </div>
           )}
         </div>
         <div className="flex gap-4 mt-4">
           <Button onClick={handleSubmit} disabled={isLoading}>
-            {isLoading ? 'Reviewing...' : 'Review Essay'}
+            {isLoading ? 'Reviewing...' : 'Review Text'}
           </Button>
           {reviewedEssayParts.length > 0 && (
             <Button onClick={() => setReviewedEssayParts([])}>
