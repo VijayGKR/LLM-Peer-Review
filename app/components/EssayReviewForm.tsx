@@ -16,6 +16,7 @@ export default function EssayReviewForm() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [selectedEdit, setSelectedEdit] = useState<Edit | null>(null);
+  const [editPosition, setEditPosition] = useState<number | null>(null);
 
   interface Edit {
     type: 'REPLACE' | 'INSERT' | 'COMMENT';
@@ -112,7 +113,10 @@ export default function EssayReviewForm() {
     return (
       <span 
         className="relative group"
-        onClick={() => setSelectedEdit(edit)}
+        onClick={(e) => {
+          setSelectedEdit(edit);
+          setEditPosition(e.currentTarget.getBoundingClientRect().top);
+        }}
       >
         <span className={`cursor-pointer ${bgColor}`}>
           {textToShow}
@@ -122,6 +126,8 @@ export default function EssayReviewForm() {
   };
 
   const handleSubmit = async () => {
+    setEditPosition(0);
+    setSelectedEdit(null);
     if (!apiKey.trim()) {
       setApiKeyError("Please enter your API key");
       return;
@@ -328,7 +334,7 @@ export default function EssayReviewForm() {
     </div>
   );
 
-  const EditSidebar: React.FC<{ edit: Edit | null }> = ({ edit }) => {
+  const EditSidebar: React.FC<{ edit: Edit | null, editPosition: number | null }> = ({ edit, editPosition }) => {
     const handleAccept = () => {
       if (edit) {
         const updatedParts = reviewedEssayParts.map(part => {
@@ -339,6 +345,7 @@ export default function EssayReviewForm() {
         });
         setReviewedEssayParts(updatedParts);
         setSelectedEdit(null);
+        setEditPosition(0);
       }
     };
 
@@ -352,15 +359,16 @@ export default function EssayReviewForm() {
         });
         setReviewedEssayParts(updatedParts);
         setSelectedEdit(null);
+        setEditPosition(0);
       }
     };
 
     return (
-      <div className="w-72 ml-4">
+      <div className="w-72 ml-4" style={{ marginTop: `${editPosition}px` }}>
         <div className="space-y-4 p-6 border rounded-lg bg-white shadow">
           {edit ? (
             <>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">{edit.type}</h3>
+              <h3 className="text-lg font-small text-gray-900 mb-2">{edit.type}</h3>
               {edit.newText && <p className="text-green-600 mb-2">{edit.newText}</p>}
               {edit.oldText && <p className="text-red-600 mb-2">{edit.oldText}</p>}
               <p className="text-sm text-gray-600 mb-4">{edit.reason}</p>
@@ -478,7 +486,7 @@ export default function EssayReviewForm() {
           </div>
         )}
       </div>
-      <EditSidebar edit={selectedEdit} />
+      <EditSidebar edit={selectedEdit} editPosition={editPosition} />
     </div>
   );
 };
