@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState , useRef} from 'react';
+import React, { useState , useRef, useEffect} from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -16,7 +16,8 @@ export default function EssayReviewForm() {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [selectedEdit, setSelectedEdit] = useState<Edit | null>(null);
-  const [editPosition, setEditPosition] = useState<number | null>(null);
+  const [editPosition, setEditPosition] = useState<number | null>(0);
+  const [isCopied, setIsCopied] = useState(false);
 
   interface Edit {
     type: 'REPLACE' | 'INSERT' | 'COMMENT';
@@ -115,7 +116,7 @@ export default function EssayReviewForm() {
         className="relative group"
         onClick={(e) => {
           setSelectedEdit(edit);
-          setEditPosition(e.currentTarget.getBoundingClientRect().top);
+          setEditPosition(e.pageY - 200);
         }}
       >
         <span className={`cursor-pointer ${bgColor}`}>
@@ -164,17 +165,19 @@ export default function EssayReviewForm() {
           
           
           buffer += decoder.decode(value);
+          //console.log("buffer: ", buffer);
+
+          let editsToAdd: (string | Edit)[] = [];
           
           if (!startedStreaming) {
-            const markedUpTextIndex = buffer.indexOf('"markedUpText": "');
+            const markedUpTextIndex = buffer.indexOf('Text:\n');
             if (markedUpTextIndex !== -1) {
-              buffer = buffer.slice(markedUpTextIndex + '"markedUpText": "'.length);
+              buffer = buffer.slice(markedUpTextIndex + 'Text:\n'.length);
               startedStreaming = true;
             }
           }
       
           if (startedStreaming) {
-            let editsToAdd: (string | Edit)[] = [];
             while (buffer.length > 0) {
               if (markupBuffer) {
                 const replaceIndex = buffer.indexOf('<R');
@@ -206,7 +209,6 @@ export default function EssayReviewForm() {
                     if (parsedEdit) {
                       editsToAdd.push(parsedEdit);
                     }
-                    console.log("editToAdd: ", parsedEdit);
                     buffer = buffer.slice(closingIndex + 1);
                     markupBuffer = '';
                   } else {
@@ -222,34 +224,37 @@ export default function EssayReviewForm() {
                   markupBuffer = '<';
                   buffer = buffer.slice(openingIndex);
                 } else {
-                  //this is only temporary, need to find a more robust fix
-                  //this is susceptible to breaking if a chunk comes in with "\n and no }
-                  //it will display the "\n
-                  const endingIndex = buffer.indexOf('}')
-                  if(endingIndex !== -1){
-                    editsToAdd.push(buffer.slice(0, endingIndex - 2));
-                    buffer = '';
-                  }else{
-                    editsToAdd.push(buffer)
-                    buffer = '';
-                  }
+                  editsToAdd.push(buffer)
+                  buffer = '';
                 }
               }
             }
 
-            console.log("editsToAdd: ", editsToAdd);
-      
-            if (editsToAdd.length > 0) {
-              setReviewedEssayParts(prev => {
-                const newParts = [...prev];
-                editsToAdd.forEach(edit => newParts.push(edit));
-                return newParts;
-              });
-            }
 
           }
 
-          if (done) break;
+          if (editsToAdd.length > 0) {
+            setReviewedEssayParts(prev => {
+              const newParts = [...prev];
+              editsToAdd.forEach(edit => newParts.push(edit));
+              return newParts;
+            });
+          }
+
+          if (done) {
+            if(markupBuffer.length > 0){
+              const parsedEdit = await parseMarkup(markupBuffer.slice(1));
+              if (parsedEdit) {
+                editsToAdd.push(parsedEdit);
+                setReviewedEssayParts(prev => {
+                  const newParts = [...prev];
+                  editsToAdd.forEach(edit => newParts.push(edit));
+                  return newParts;
+                });
+              }
+            }
+            break;
+          }
 
         }
       } else {
@@ -313,13 +318,15 @@ export default function EssayReviewForm() {
               <ul className="list-disc list-inside ml-4 mt-1">
                 <li>The purpose of the text</li>
                 <li>Any relevant information</li>
-                <li>Modifications you want to see</li>
+                <li>Modifications you want</li>
               </ul>
             </li>
             <li>Input your writing in the text box below.</li>
-            <li>Click &quot;Review Text&quot; when you are satisfied.</li>
+            <li>Click &quot;Review Text&quot; when you&apos;re finished.</li>
             <li>A review of your text with inline markups will be generated.</li>
-            <li>Accept or reject changes by hovering over the marked-up text.</li>
+            <li>Accept or reject changes by clicking the annotations.</li>
+            <li>Click &quot;Copy Text&quot; to copy the exact text with the changes you accepted.</li>
+            <li>Click &quot;Reset&quot; to clear the text and start over.</li>
           </ol>
         </div>
         <div>
@@ -335,6 +342,29 @@ export default function EssayReviewForm() {
   );
 
   const EditSidebar: React.FC<{ edit: Edit | null, editPosition: number | null }> = ({ edit, editPosition }) => {
+    const sidebarRef = React.useRef<HTMLDivElement>(null);
+
+    const adjustedPosition = React.useMemo(() => {
+      if (typeof window === 'undefined' || editPosition === null) return 0;
+      const viewportHeight = window.innerHeight;
+      const sidebarHeight = sidebarRef.current?.clientHeight || 0;
+      const maxPosition = viewportHeight - sidebarHeight - 20; // 20px buffer
+      return Math.max(0, Math.min(editPosition, maxPosition));
+    }, [editPosition]);
+
+    React.useEffect(() => {
+      const updatePosition = () => {
+        if (sidebarRef.current) {
+          const newPosition = adjustedPosition;
+          sidebarRef.current.style.marginTop = `${newPosition}px`;
+        }
+      };
+
+      updatePosition();
+      window.addEventListener('resize', updatePosition);
+      return () => window.removeEventListener('resize', updatePosition);
+    }, [adjustedPosition]);
+
     const handleAccept = () => {
       if (edit) {
         const updatedParts = reviewedEssayParts.map(part => {
@@ -364,7 +394,7 @@ export default function EssayReviewForm() {
     };
 
     return (
-      <div className="w-72 ml-4" style={{ marginTop: `${editPosition}px` }}>
+      <div ref={sidebarRef} className="w-72 ml-4">
         <div className="space-y-4 p-6 border rounded-lg bg-white shadow">
           {edit ? (
             <>
@@ -397,10 +427,20 @@ export default function EssayReviewForm() {
     );
   };
 
+  useEffect(() => {
+    if (isCopied) {
+      const timer = setTimeout(() => {
+        setIsCopied(false);
+      }, 2000); // Reset the icon after 2 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [isCopied]);
+
   return (
     <div className="flex">
       <Sidebar apiKey={apiKey} setApiKey={setApiKey} apiKeyError={apiKeyError} />
-      <div className="flex-grow max-w-3xl ml-4">
+      <div className="flex-grow max-w-[740px] ml-4">
         <div className="mb-4">
           <textarea
             value={prompt}
@@ -474,10 +514,52 @@ export default function EssayReviewForm() {
           <Button onClick={handleSubmit} disabled={isLoading}>
             {isLoading ? 'Reviewing...' : 'Review Text'}
           </Button>
-          {reviewedEssayParts.length > 0 && (
-            <Button onClick={() => setReviewedEssayParts([])}>
-              Reset
-            </Button>
+          {reviewedEssayParts.length > 0 && !isLoading && (
+            <>
+              <Button onClick={() => {
+                setReviewedEssayParts([]);
+                setSelectedEdit(null);
+                setEditPosition(0);
+                setPrompt('');
+              }}>
+                Reset
+              </Button>
+              <Button 
+                onClick={() => {
+                  const text = reviewedEssayParts.map(part => {
+                    if (typeof part === 'string') return part;
+                    if (part.type === 'COMMENT') return ''; // Ignore comments
+                    if (part.type === 'REPLACE') {
+                      return part.isAccepted ? (part.newText || '') : (part.oldText || '');
+                    }
+                    if (part.type === 'INSERT') {
+                      return part.isAccepted ? (part.newText || '') : '';
+                    }
+                    return ''; // Fallback for unexpected cases
+                  }).join('');
+                  navigator.clipboard.writeText(text);
+                  setIsCopied(true);
+                }}
+                className="flex items-center gap-2"
+              >
+                {isCopied ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                    </svg>
+                    Copy Text
+                  </>
+                )}
+              </Button>
+            </>
           )}
         </div>
         {error && (

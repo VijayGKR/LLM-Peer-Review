@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# LLM Peer Review
 
-## Getting Started
+Existing solutions for editing and reviewing written text using LLMs haven't met my needs. The edits the LLM makes to a text are not clear to see in regular chat UI's, and sometimes large swathes of text would end up getting re-written in ways I wouldn't like.  Inspired by both the document review features in Google Docs, which allows collaborators to comment on particular parts of a document and suggest edits that the original author can either accept or reject, as well as the powerful LLM code editing features in the Cursor IDE, I built this small webapp using React, Next.js, and some help from Claude 3.5 Sonnet.
 
-First, run the development server:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- Real-time essay review using Claude 3.5 Sonnet
+- Interactive UI for accepting or rejecting suggested changes
+- Inline annotations for easy visualization of edits
+- Copy functionality for the final edited text
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How to Use
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+1. Enter your Anthropic API key in the sidebar.
+2. (Optional) Input a prompt to guide the AI's review process.
+3. Enter your essay text in the main text area.
+4. Click "Review Text" to start the AI review process.
+5. Once the review is complete, interact with the highlighted sections to view and manage suggested changes.
+6. Accept or reject changes as needed.
+7. Use the "Copy Text" button to copy the final version with accepted changes.
+8. Click "Reset" to clear all text and start over.
 
-## Learn More
+## Technologies Used
 
-To learn more about Next.js, take a look at the following resources:
+- React
+- Next.js
+- Tailwind CSS
+- Anthropic API
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Note
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+This application requires a valid Anthropic API key to function. Ensure you have the necessary permissions and credits to use the API.
 
-## Deploy on Vercel
+## Contributing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Contributions, issues, and feature requests are welcome. Fork this repository and request a PR to contribute.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+## Privacy
+
+The text you input into the website, as well as the Anthropic API key, are not stored.
+
+## License
+
+[MIT](https://choosealicense.com/licenses/mit/)
