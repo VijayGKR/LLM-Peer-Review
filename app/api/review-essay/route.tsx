@@ -1,11 +1,17 @@
 import { NextRequest } from 'next/server';
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 export async function POST(request: NextRequest) {
+  const apiKey = request.headers.get('X-API-Key');
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: 'API key is required' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const anthropic = new Anthropic({ apiKey });
+
   console.log('Received request to review essay');
   const { essay: userEssay, prompt } = await request.json();
   console.log('Essay length:', userEssay.length, 'Prompt length:', prompt.length);
