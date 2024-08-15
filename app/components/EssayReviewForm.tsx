@@ -15,12 +15,15 @@ export default function EssayReviewForm() {
   const [pendingParts, setPendingParts] = useState<(string | Promise<Edit | null>)[]>([]);
   const [apiKey, setApiKey] = useState('');
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [selectedEdit, setSelectedEdit] = useState<Edit | null>(null);
 
   interface Edit {
     type: 'REPLACE' | 'INSERT' | 'COMMENT';
     oldText?: string;
     newText?: string;
     reason: string;
+    isAccepted?: boolean;
+    isRejected?: boolean;
   }
 
   const handleEssayChange = (content: string) => {
@@ -68,35 +71,10 @@ export default function EssayReviewForm() {
 
   interface InlineEditableProps {
     edit: Edit;
+    index: number;
   }
   
-  const InlineEditable: React.FC<InlineEditableProps> = ({ edit }) => {
-    const [isAccepted, setIsAccepted] = useState(false);
-    const [isRejected, setIsRejected] = useState(false);
-  
-    const handleAccept = () => {
-      setIsAccepted(true);
-      setIsRejected(false);
-    };
-  
-    const handleReject = () => {
-      setIsAccepted(false);
-      setIsRejected(true);
-    };
-  
-    if(edit.type === 'COMMENT'){
-      if(isAccepted){
-        return null;
-      }
-    }
-    if (isRejected) {
-      if(edit.type === 'REPLACE'){
-        return edit.oldText;
-      }else{
-        return null;
-      }
-    }
-  
+  const InlineEditable: React.FC<InlineEditableProps> = ({ edit, index }) => {
     let bgColor = '';
     let displayText = '';
     let textToShow = '';
@@ -105,12 +83,12 @@ export default function EssayReviewForm() {
       case 'REPLACE':
         bgColor = 'bg-yellow-200';
         displayText = edit.oldText || '';
-        textToShow = isAccepted ? (edit.newText || ''): displayText;
+        textToShow = edit.isAccepted ? (edit.newText || '') : displayText;
         break;
       case 'INSERT':
         bgColor = 'bg-green-200';
         displayText = '+';
-        textToShow = isAccepted ? (edit.newText || '') : displayText;
+        textToShow = edit.isAccepted ? (edit.newText || '') : displayText;
         break;
       case 'COMMENT':
         bgColor = 'bg-blue-200';
@@ -119,34 +97,26 @@ export default function EssayReviewForm() {
         break;
     }
   
+    if (edit.isRejected) {
+      if (edit.type === 'REPLACE') {
+        return edit.oldText;
+      } else {
+        return null;
+      }
+    }
+  
+    if (edit.type === 'COMMENT' && edit.isAccepted) {
+      return null;
+    }
+  
     return (
-      <span className="relative group">
+      <span 
+        className="relative group"
+        onClick={() => setSelectedEdit(edit)}
+      >
         <span className={`cursor-pointer ${bgColor}`}>
           {textToShow}
         </span>
-        {!isAccepted && (
-          <span className="absolute bottom-full left-0 bg-white border border-gray-300 p-4 rounded shadow-lg hidden group-hover:block w-96 z-10">
-            <p className="font-semibold mb-2">{edit.type}</p>
-            {edit.newText && <p className="text-green-600 mb-2">{edit.newText}</p>}
-            <p className="text-sm text-gray-600 mb-4">{edit.reason}</p>
-            <div className="flex justify-between">
-              <button
-                onClick={handleAccept}
-                className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
-              >
-                {edit.type === 'COMMENT' ? 'Got it' : 'Accept'}
-              </button>
-              {edit.type !== 'COMMENT' && (
-                <button
-                  onClick={handleReject}
-                  className="text-red-500 border-red-500 border hover:bg-red-50 px-3 py-1 rounded"
-                >
-                  Reject
-                </button>
-              )}
-            </div>
-          </span>
-        )}
       </span>
     );
   };
@@ -298,7 +268,7 @@ export default function EssayReviewForm() {
           </React.Fragment>
         ));
       } else {
-        return <InlineEditable key={index} edit={part} />;
+        return <InlineEditable key={index} edit={part} index={index} />;
       }
     });
   };
@@ -358,8 +328,69 @@ export default function EssayReviewForm() {
     </div>
   );
 
+  const EditSidebar: React.FC<{ edit: Edit | null }> = ({ edit }) => {
+    const handleAccept = () => {
+      if (edit) {
+        const updatedParts = reviewedEssayParts.map(part => {
+          if (typeof part === 'object' && part === edit) {
+            return { ...part, isAccepted: true, isRejected: false };
+          }
+          return part;
+        });
+        setReviewedEssayParts(updatedParts);
+        setSelectedEdit(null);
+      }
+    };
+
+    const handleReject = () => {
+      if (edit) {
+        const updatedParts = reviewedEssayParts.map(part => {
+          if (typeof part === 'object' && part === edit) {
+            return { ...part, isRejected: true, isAccepted: false };
+          }
+          return part;
+        });
+        setReviewedEssayParts(updatedParts);
+        setSelectedEdit(null);
+      }
+    };
+
+    return (
+      <div className="w-72 ml-4">
+        <div className="space-y-4 p-6 border rounded-lg bg-white shadow">
+          {edit ? (
+            <>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{edit.type}</h3>
+              {edit.newText && <p className="text-green-600 mb-2">{edit.newText}</p>}
+              {edit.oldText && <p className="text-red-600 mb-2">{edit.oldText}</p>}
+              <p className="text-sm text-gray-600 mb-4">{edit.reason}</p>
+              <div className="flex justify-between">
+                <button
+                  onClick={handleAccept}
+                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded"
+                >
+                  {edit.type === 'COMMENT' ? 'Got it' : 'Accept'}
+                </button>
+                {edit.type !== 'COMMENT' && (
+                  <button
+                    onClick={handleReject}
+                    className="text-red-500 border-red-500 border hover:bg-red-50 px-3 py-1 rounded"
+                  >
+                    Reject
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-500">Select an edit to view details</p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex mr-[-100px]ZZmx-4 sm:mx-6 md:mx-8 lg:mx-12">
+    <div className="flex">
       <Sidebar apiKey={apiKey} setApiKey={setApiKey} apiKeyError={apiKeyError} />
       <div className="flex-grow max-w-3xl ml-4">
         <div className="mb-4">
@@ -447,6 +478,7 @@ export default function EssayReviewForm() {
           </div>
         )}
       </div>
+      <EditSidebar edit={selectedEdit} />
     </div>
   );
 };
