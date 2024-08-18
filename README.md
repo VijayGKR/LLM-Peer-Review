@@ -4,7 +4,7 @@ Existing solutions for editing and reviewing written text using LLMs haven't met
 
 ## How it Works
 
-Claude 3.5 Sonnet is used in the backend, with a prompt to output simple mark-ups that are parsed and displayed by the front end. A limitation with the current approach is the fact that 3.5 Sonnet only allows for a maximum of 8192 output tokens, meaning editing larger texts may result in an incomplete review.
+I'm using Claude 3.5 Sonnet with a prompt to output simple mark-ups that are parsed and displayed by the front end. A limitation with the current approach is the fact that 3.5 Sonnet only allows for a maximum of 8192 output tokens, meaning editing larger texts may result in an incomplete review.
 
 <img width="1512" alt="Screenshot 2024-08-17 at 8 46 02 PM" src="https://github.com/user-attachments/assets/9381621e-d8ff-4059-a96b-a8296df05b7c">
 
