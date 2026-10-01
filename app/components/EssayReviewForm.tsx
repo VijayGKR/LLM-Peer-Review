@@ -1,86 +1,20 @@
 'use client';
 
-import React, { useState , useRef, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { ReviewMarkupParser, reviewedText, type Edit } from '@/lib/review-markup';
 
-
-export default function EssayReviewForm() {
-  const [userEssay, setUserEssay] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [reviewedEssay, setReviewedEssay] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reviewedEssayParts, setReviewedEssayParts] = useState<(string | Edit)[]>([]);
-  const [pendingParts, setPendingParts] = useState<(string | Promise<Edit | null>)[]>([]);
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
-  const [selectedEdit, setSelectedEdit] = useState<Edit | null>(null);
-  const [editPosition, setEditPosition] = useState<number | null>(0);
-  const [isCopied, setIsCopied] = useState(false);
-
-  interface Edit {
-    type: 'REPLACE' | 'INSERT' | 'COMMENT';
-    oldText?: string;
-    newText?: string;
-    reason: string;
-    isAccepted?: boolean;
-    isRejected?: boolean;
-  }
-
-  const handleEssayChange = (content: string) => {
-    setUserEssay(content);
-  };
-
-  const handlePromptChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setPrompt(event.target.value);
-  };
-
-
-  function preprocessInput(input: string): string {
-    return input.replace(/\\"/g, '"');
-  }
-
-  async function parseMarkup(input: string): Promise<Edit | null> {
-    const processedInput = preprocessInput(input);
-
-    const commentMatch = processedInput.match(/<COMMENT reason="(.+?)"\/>/);
-    const replaceMatch = processedInput.match(/<REPLACE new="(.+?)" reason="(.+?)">(.*?)<\/REPLACE>/);
-    const insertMatch = processedInput.match(/<INSERT text="(.+?)" reason="(.+?)"\/>/);
-
-    if (commentMatch) {
-        return {
-            type: 'COMMENT',
-            reason: commentMatch[1]
-        };
-    } else if (replaceMatch) {
-        return {
-            type: 'REPLACE',
-            oldText: replaceMatch[3],
-            newText: replaceMatch[1],
-            reason: replaceMatch[2]
-        };
-    } else if (insertMatch) {
-        return {
-            type: 'INSERT',
-            newText: insertMatch[1],
-            reason: insertMatch[2]
-        };
-    } else {
-        return null;
-    }
-  }
 
   interface InlineEditableProps {
     edit: Edit;
-    index: number;
+    onSelect: (edit: Edit, position: number) => void;
   }
-  
-  const InlineEditable: React.FC<InlineEditableProps> = ({ edit, index }) => {
+
+  const InlineEditable: React.FC<InlineEditableProps> = ({ edit, onSelect }) => {
     let bgColor = '';
     let displayText = '';
     let textToShow = '';
-  
+
     switch (edit.type) {
       case 'REPLACE':
         bgColor = 'bg-yellow-200';
@@ -98,7 +32,7 @@ export default function EssayReviewForm() {
         textToShow = displayText;
         break;
     }
-  
+
     if (edit.isRejected) {
       if (edit.type === 'REPLACE') {
         return edit.oldText;
@@ -106,17 +40,16 @@ export default function EssayReviewForm() {
         return null;
       }
     }
-  
+
     if (edit.type === 'COMMENT' && edit.isAccepted) {
       return null;
     }
-  
+
     return (
-      <span 
+      <span
         className="relative group"
         onClick={(e) => {
-          setSelectedEdit(edit);
-          setEditPosition(e.pageY - 200);
+          onSelect(edit, e.pageY - 200);
         }}
       >
         <span className={`cursor-pointer ${bgColor}`}>
@@ -126,166 +59,8 @@ export default function EssayReviewForm() {
     );
   };
 
-  const handleSubmit = async () => {
-    setEditPosition(0);
-    setSelectedEdit(null);
-    if (!apiKey.trim()) {
-      setApiKeyError("Please enter your API key");
-      return;
-    }
-    setApiKeyError(null);
-    setIsLoading(true);
-    setReviewedEssayParts([]);
-    setError(null);
-    try {
-      const response = await fetch('/api/review-essay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-        },
-        body: JSON.stringify({ essay: userEssay, prompt: prompt }),
-      });
 
-      if (!response.ok) {
-        throw new Error(`Failed to get essay review: ${response.status} ${response.statusText}`);
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (reader) {
-        let buffer = '';
-        let startedStreaming = false;
-        let replaceCase = false;
-        let markupBuffer = '';
-      
-        while (true) {
-          const { done, value } = await reader.read();
-          
-          
-          buffer += decoder.decode(value);
-          //console.log("buffer: ", buffer);
-
-          let editsToAdd: (string | Edit)[] = [];
-          
-          if (!startedStreaming) {
-            const markedUpTextIndex = buffer.indexOf('Text:\n');
-            if (markedUpTextIndex !== -1) {
-              buffer = buffer.slice(markedUpTextIndex + 'Text:\n'.length);
-              startedStreaming = true;
-            }
-          }
-      
-          if (startedStreaming) {
-            while (buffer.length > 0) {
-              if (markupBuffer) {
-                const replaceIndex = buffer.indexOf('<R');
-
-                if(replaceIndex !== -1){
-                  replaceCase = true;
-                }
-
-                if(replaceCase){
-                  const closingReplaceIndex = markupBuffer.indexOf('</REPLACE>');
-                  if(closingReplaceIndex !== -1){
-                    const parsedEdit = await parseMarkup(markupBuffer.slice(1, closingReplaceIndex + 10));
-                    if (parsedEdit) {
-                      editsToAdd.push(parsedEdit);
-                    }
-                    buffer = markupBuffer.slice(closingReplaceIndex + 10) + buffer;
-                    markupBuffer = '';
-                    replaceCase = false;
-                  }else{
-                    //console.log("in replace case ", markupBuffer);
-                    markupBuffer += buffer;
-                    buffer = '';
-                  }
-                }else{
-                  const closingIndex = buffer.indexOf('>');
-                  if (closingIndex !== -1) {
-                    markupBuffer += buffer.slice(0, closingIndex + 1);
-                    const parsedEdit = await parseMarkup(markupBuffer.slice(1));
-                    if (parsedEdit) {
-                      editsToAdd.push(parsedEdit);
-                    }
-                    buffer = buffer.slice(closingIndex + 1);
-                    markupBuffer = '';
-                  } else {
-                    markupBuffer += buffer;
-                    buffer = '';
-                  }
-                }
-              } else {
-                const openingIndex = buffer.indexOf('<');
-                if (openingIndex !== -1) {
-                  //console.log("starting buffer: ", buffer);
-                  editsToAdd.push(buffer.slice(0, openingIndex));
-                  markupBuffer = '<';
-                  buffer = buffer.slice(openingIndex);
-                } else {
-                  editsToAdd.push(buffer)
-                  buffer = '';
-                }
-              }
-            }
-
-
-          }
-
-          if (editsToAdd.length > 0) {
-            setReviewedEssayParts(prev => {
-              const newParts = [...prev];
-              editsToAdd.forEach(edit => newParts.push(edit));
-              return newParts;
-            });
-          }
-
-          if (done) {
-            if(markupBuffer.length > 0){
-              const parsedEdit = await parseMarkup(markupBuffer.slice(1));
-              if (parsedEdit) {
-                editsToAdd.push(parsedEdit);
-                setReviewedEssayParts(prev => {
-                  const newParts = [...prev];
-                  editsToAdd.forEach(edit => newParts.push(edit));
-                  return newParts;
-                });
-              }
-            }
-            break;
-          }
-
-        }
-      } else {
-        throw new Error('Response body is not readable');
-      }
-    } catch (error) {
-      console.error('Error reviewing essay:', error);
-      setError(error instanceof Error ? error.message : 'An unknown error occurred');
-    } finally {
-      console.log("done");
-      setIsLoading(false);
-    }
-  };
-
-  const renderReviewedEssay = () => {
-    return reviewedEssayParts.map((part, index) => {
-      if (typeof part === 'string') {
-        return part.split('\n').map((line, i) => (
-          <React.Fragment key={`${index}-${i}`}>
-            {line}
-            {i < part.split('\n').length - 1 && <br />}
-          </React.Fragment>
-        ));
-      } else {
-        return <InlineEditable key={index} edit={part} index={index} />;
-      }
-    });
-  };
-
-
-  const Sidebar: React.FC<{ apiKey: string; setApiKey: (key: string) => void; apiKeyError: string | null }> = ({ apiKey, setApiKey, apiKeyError }) => (    
+  const Sidebar: React.FC<{ apiKey: string; setApiKey: (key: string) => void; apiKeyError: string | null }> = ({ apiKey, setApiKey, apiKeyError }) => (
     <div className="w-72 ml-4">
       <div className="space-y-4 p-6 border rounded-lg bg-white shadow">
         <div>
@@ -341,29 +116,27 @@ export default function EssayReviewForm() {
     </div>
   );
 
-  const EditSidebar: React.FC<{ edit: Edit | null, editPosition: number | null }> = ({ edit, editPosition }) => {
-    const sidebarRef = React.useRef<HTMLDivElement>(null);
 
-    const adjustedPosition = React.useMemo(() => {
-      if (typeof window === 'undefined' || editPosition === null) return 0;
-      const viewportHeight = window.innerHeight;
-      const sidebarHeight = sidebarRef.current?.clientHeight || 0;
-      const maxPosition = viewportHeight - sidebarHeight - 20; // 20px buffer
-      return Math.max(0, Math.min(editPosition, maxPosition));
-    }, [editPosition]);
+  const EditSidebar: React.FC<{
+    edit: Edit | null;
+    editPosition: number | null;
+    reviewedEssayParts: (string | Edit)[];
+    setReviewedEssayParts: React.Dispatch<React.SetStateAction<(string | Edit)[]>>;
+    setSelectedEdit: React.Dispatch<React.SetStateAction<Edit | null>>;
+    setEditPosition: React.Dispatch<React.SetStateAction<number | null>>;
+  }> = ({ edit, editPosition, reviewedEssayParts, setReviewedEssayParts, setSelectedEdit, setEditPosition }) => {
+    const sidebarRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
       const updatePosition = () => {
-        if (sidebarRef.current) {
-          const newPosition = adjustedPosition;
-          sidebarRef.current.style.marginTop = `${newPosition}px`;
-        }
+        if (!sidebarRef.current) return;
+        const maxPosition = window.innerHeight - sidebarRef.current.clientHeight - 20;
+        sidebarRef.current.style.marginTop = `${Math.max(0, Math.min(editPosition ?? 0, maxPosition))}px`;
       };
-
       updatePosition();
       window.addEventListener('resize', updatePosition);
       return () => window.removeEventListener('resize', updatePosition);
-    }, [adjustedPosition]);
+    }, [editPosition, edit]);
 
     const handleAccept = () => {
       if (edit) {
@@ -427,6 +200,101 @@ export default function EssayReviewForm() {
     );
   };
 
+export default function EssayReviewForm() {
+  const [userEssay, setUserEssay] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reviewedEssayParts, setReviewedEssayParts] = useState<(string | Edit)[]>([]);
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [selectedEdit, setSelectedEdit] = useState<Edit | null>(null);
+  const [editPosition, setEditPosition] = useState<number | null>(0);
+  const [isCopied, setIsCopied] = useState(false);
+
+
+
+  const handleEssayChange = (content: string) => {
+    setUserEssay(content);
+  };
+
+
+
+
+  const handleSubmit = async () => {
+    setEditPosition(0);
+    setSelectedEdit(null);
+    if (!apiKey.trim()) {
+      setApiKeyError("Please enter your API key");
+      return;
+    }
+    setApiKeyError(null);
+    if (!userEssay.trim()) {
+      setError('Please enter text to review');
+      return;
+    }
+    setIsLoading(true);
+    setReviewedEssayParts([]);
+    setError(null);
+    try {
+      const response = await fetch('/api/review-essay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({ essay: userEssay, prompt: prompt }),
+      });
+
+      if (!response.ok) {
+        const failure = await response.json().catch(() => null);
+        throw new Error(failure?.error || `Failed to get essay review (${response.status})`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        const parser = new ReviewMarkupParser();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            const parts = parser.append(decoder.decode(value, { stream: !done }), done);
+            if (parts.length) setReviewedEssayParts(prev => [...prev, ...parts]);
+            if (done) break;
+          }
+        } finally {
+          await reader.cancel();
+          reader.releaseLock();
+        }
+      } else {
+        throw new Error('Response body is not readable');
+      }
+    } catch (error) {
+      console.error('Error reviewing essay:', error);
+      setError(error instanceof Error ? error.message : 'An unknown error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderReviewedEssay = () => {
+    return reviewedEssayParts.map((part, index) => {
+      if (typeof part === 'string') {
+        return part.split('\n').map((line, i) => (
+          <React.Fragment key={`${index}-${i}`}>
+            {line}
+            {i < part.split('\n').length - 1 && <br />}
+          </React.Fragment>
+        ));
+      } else {
+        return <InlineEditable key={index} edit={part} onSelect={(edit, position) => { setSelectedEdit(edit); setEditPosition(position); }} />;
+      }
+    });
+  };
+
+
+
   useEffect(() => {
     if (isCopied) {
       const timer = setTimeout(() => {
@@ -443,6 +311,7 @@ export default function EssayReviewForm() {
       <div className="flex-grow max-w-[740px] ml-4">
         <div className="mb-4">
           <textarea
+            aria-label="Review instructions"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Enter your prompt here... default is general improvements"
@@ -485,12 +354,15 @@ export default function EssayReviewForm() {
               {renderReviewedEssay()}
             </div>
           ) : (
-            <div 
+            <div
               className="p-4 border rounded-lg bg-white shadow min-h-[30rem] overflow-y-auto cursor-text relative"
               onClick={(e) => (e.currentTarget.querySelector('[contenteditable]') as HTMLElement)?.focus()}
             >
               <div
                 contentEditable
+                role="textbox"
+                aria-label="Text to review"
+                aria-multiline="true"
                 onInput={(e) => {
                   handleEssayChange(e.currentTarget.textContent || '');
                   e.currentTarget.classList.toggle('empty', !e.currentTarget.textContent);
@@ -521,22 +393,15 @@ export default function EssayReviewForm() {
                 setSelectedEdit(null);
                 setEditPosition(0);
                 setPrompt('');
+                setUserEssay('');
+                setError(null);
+                setIsCopied(false);
               }}>
                 Reset
               </Button>
-              <Button 
+              <Button
                 onClick={() => {
-                  const text = reviewedEssayParts.map(part => {
-                    if (typeof part === 'string') return part;
-                    if (part.type === 'COMMENT') return ''; // Ignore comments
-                    if (part.type === 'REPLACE') {
-                      return part.isAccepted ? (part.newText || '') : (part.oldText || '');
-                    }
-                    if (part.type === 'INSERT') {
-                      return part.isAccepted ? (part.newText || '') : '';
-                    }
-                    return ''; // Fallback for unexpected cases
-                  }).join('');
+                  const text = reviewedText(reviewedEssayParts);
                   navigator.clipboard.writeText(text);
                   setIsCopied(true);
                 }}
@@ -568,7 +433,7 @@ export default function EssayReviewForm() {
           </div>
         )}
       </div>
-      <EditSidebar edit={selectedEdit} editPosition={editPosition} />
+      <EditSidebar edit={selectedEdit} editPosition={editPosition} reviewedEssayParts={reviewedEssayParts} setReviewedEssayParts={setReviewedEssayParts} setSelectedEdit={setSelectedEdit} setEditPosition={setEditPosition} />
     </div>
   );
 };
